@@ -8,8 +8,26 @@ const hpp = require('hpp');
 const AppError = require('./utils/AppError');
 const globalErrorHandler = require('./controllers/errorController')
 const authRouter = require('./routes/authRouter')
+const paymentRouter = require('./routes/paymentRoutes')
+const webhookRouter = require('./routes/webhookRoutes');
  
 const app = express();
+
+// Logging
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined')); // production logs
+}
+
+app.use(
+  '/api/v1/webhook', 
+  express.raw({ type: 'application/json' }), 
+  webhookRouter
+);
+
+// Body parser, reading data from body into req.body
+app.use(express.json({ limit: '5kb' }));
 
 // Security HTTP headers
 app.use(helmet());
@@ -19,16 +37,6 @@ app.use(cors({
   origin: process.env.FRONTEND_URL, // TODO: replace * with your React domain in production
   credentials: true
 }));
-
-// Logging
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined')); // production logs
-}
-
-// Body parser, reading data from body into req.body
-app.use(express.json({ limit: '5kb' }));
 
 // Prevent parameter pollution
 app.use(hpp());
@@ -48,6 +56,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/v1/auth', authRouter);
+app.use('/api/v1/payment', paymentRouter);
 
 // 2) UNHANDLED ROUTES
 app.all(/.*/, (req, res, next) => {

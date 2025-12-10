@@ -1,106 +1,120 @@
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const User = require(`../models/userModel`);
-const catchAsync = require(`../utils/catchAsync`);
-const AppError = require(`../utils/AppError`);
 const { promisify } = require('util');
+const jwt = require('jsonwebtoken');
+const authService = require('../services/authService');
+const User = require('../models/userModel');
+const catchAsync = require('../utils/catchAsync');
+const AppError = require('../utils/AppError');
+const tokenService = require('../services/tokenService');
 
-// helper to create token
-const signToken = (id, sessionId) => {
-    return jwt.sign({ id, session: sessionId }, process.env.JWT_SECRET, {
-        expiresIn: process.env.JWT_EXPIRES_IN
-    });
-};
-
-// send token + user
-const createSendToken = async (userDoc, statusCode, res) => {
-    const sessionId = userDoc.currentSession;
-    const token = signToken(userDoc._id, sessionId);
-
-    // Convert to plain object and remove sensitive fields
-    const user = userDoc.toObject ? userDoc.toObject() : { ...userDoc };
-    delete user.password;
-    delete user.__v;
-    delete user.currentSession;
-
-    res.status(statusCode).json({
-        status: 'success',
-        token,
-        data: { user }
-    });
-};
-
-// Create User
-exports.createUser = catchAsync(async (req, res, next) => {
+// 1. Register User
+exports.register = catchAsync(async (req, res, next) => {
     const { name, email, password, confirmPassword } = req.body;
-    const newUser = await User.create({
+
+    // Call Service
+    const { user, accessToken, refreshToken } = await authService.register({
         name,
         email,
         password,
         confirmPassword
     });
 
-    return createSendToken(newUser, 201, res);
+    // Send Response
+    res.status(201).json({
+        status: 'success',
+        tokens: { accessToken, refreshToken },
+        data: { user }
+    });
 });
 
-// Login
+// 2. Login User
 exports.login = catchAsync(async (req, res, next) => {
     const { email, password } = req.body;
 
-    // 1. check email & password exist
     if (!email || !password) {
         return next(new AppError('Please provide email and password!', 400));
     }
 
-    // 2. find user & include password
-    const user = await User.findOne({ email }).select('+password +currentSession');
+    const { user, accessToken, refreshToken } = await authService.login(email, password);
 
-    if (!user || !(await user.correctPassword(password, user.password))) {
-        return next(new AppError('Incorrect email or password', 401));
-    }
-
-    // 3. create a new session id and store it on the user to enforce single device
-    const sessionId = crypto.randomBytes(16).toString('hex');
-    user.currentSession = sessionId;
-    // save without running full validation (safe if no schema changes needed)
-    await user.save({ validateBeforeSave: false });
-
-    // 4. send token
-    await createSendToken(user, 200, res);
+    res.status(200).json({
+        status: 'success',
+        tokens: { accessToken, refreshToken },
+        data: { user }
+    });
 });
 
-// protect routes
+// 3. Refresh Token (Get new Access Token)
+exports.refreshToken = catchAsync(async (req, res, next) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+        return next(new AppError('Refresh token is required', 400));
+    }
+
+    const tokens = await authService.refreshTokens(refreshToken);
+
+    res.status(200).json({
+        status: 'success',
+        tokens // Contains new accessToken & new refreshToken
+    });
+});
+
+// 4. Logout
+exports.logout = catchAsync(async (req, res, next) => {
+    const { refreshToken } = req.body;
+    
+    // We try to remove it, but we don't error out if it's already gone/invalid
+    // Logic is handled in service
+    if (refreshToken) {
+        await authService.logout(refreshToken);
+    }
+
+    res.status(204).json({
+        status: 'success',
+        data: null
+    });
+});
+
+// 5. Protect Middleware (Guard routes)
 exports.protect = catchAsync(async (req, res, next) => {
+    // A) Get token from header
     let token;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        const parts = authHeader.split(' ');
-        if (parts.length === 2) token = parts[1];
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        token = req.headers.authorization.split(' ')[1];
     }
 
     if (!token) {
-        return next(new AppError('You are not logged in. Please login to get access to this route', 401));
+        return next(new AppError('You are not logged in. Please login to get access.', 401));
     }
 
-    // verify token
-    const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+    // B) Verify Access Token Signature
+    // We use the tokenService or manual jwt.verify
+    const decoded = tokenService.verifyAccessToken(token);
 
-    // find user
-    const currentUser = await User.findById(decoded.id).select('+password +currentSession');
+    // C) Check if user still exists
+    // This is critical: if a user is deleted, their token should stop working
+    const currentUser = await User.findById(decoded.sub);
     if (!currentUser) {
-        return next(new AppError('User no longer exists', 401));
+        return next(new AppError('The user belonging to this token no longer exists.', 401));
     }
 
-    // check that session in token matches the server-side current session
-    if (!decoded.session || currentUser.currentSession !== decoded.session) {
-      return next(new AppError('Session invalid or expired (login detected from another device)', 401));
+    // D) Check if user changed password after the token was issued
+    if (currentUser.passwordChangedAfter(decoded.iat)) {
+        return next(new AppError('User recently changed password! Please log in again.', 401));
     }
 
-    //check whether the user has chaneged their password currently and someone's trying to login with previous token
-    if(currentUser.passwordChangedAfter(decoded.iat)){
-        return next(new AppError('User has changed their password recently. Please login again', 401));
-    };
-
+    // GRANT ACCESS
     req.user = currentUser;
     next();
 });
+
+// get me
+exports.getMe = (req, res, next) => {
+    // req.user is set by the 'protect' middleware
+    res.status(200).json({
+        status: 'success',
+        data: {
+            user: req.user
+        }
+    });
+};

@@ -51,47 +51,45 @@ const userSchema = new Schema({
       type: String,
       default: null,
     },
-    currentSession: {
-        type: String,
-        select: false
-    },
+    refreshTokens: [{
+        token: { type: String, required: true },
+        createdAt: { type: Date, default: Date.now }
+    }],
     passwordChangedAt: Date,
 },{ 
     timestamps: true 
 });
 
 
-// Encrypt password before saving
+// 1. Encrypt password before saving
 userSchema.pre('save', async function () {
-    if (!this.isModified('password')) {
-        return ;
-    }
+    // If password is not modified, simply return (promise resolves automatically)
+    if (!this.isModified('password')) return;
+
     this.password = await bcrypt.hash(this.password, 12);
-    this.passwordChangedAt = Date.now() - 1000;
-    this.confirmPassword = undefined;
+    this.confirmPassword = undefined; // Do not persist this field
 });
 
-//method to check if the user has changed their password after a JWT was issued
-userSchema.methods.passwordChangedAfter = function(JWTTimestamp){
-    if(this.passwordChangedAt){
-        const passwordChangedTimestamp = parseInt(this.passwordChangedAt.getTime() / 1000, 10);
-        //console.log(passwordChangedTimestamp, JWTTimestamp)
-        return JWTTimestamp < passwordChangedTimestamp;
+// 4. Method: Check if password changed after token was issued
+userSchema.methods.passwordChangedAfter = function (JWTTimestamp) {
+    if (this.passwordChangedAt) {
+        const changedTimestamp = parseInt(this.passwordChangedAt.getTime() / 1000, 10);
+        return JWTTimestamp < changedTimestamp;
     }
+    // False means NOT changed
     return false;
-}
+};
 
-// Compare entered password with hashed one
+// 3. Method: Check if password is correct
 userSchema.methods.correctPassword = async function (candidatePassword, userPassword) {
     return await bcrypt.compare(candidatePassword, userPassword);
 };
 
-userSchema.pre('save', async function(){
-    if(!this.isModified('password') || this.isNew){
-        return;
-    }
-    
+// 2. Update passwordChangedAt property for the password reset functionality
+userSchema.pre('save', async function () {
+    if (!this.isModified('password') || this.isNew) return;
+
     this.passwordChangedAt = Date.now() - 1000;
-})
+});
 
 module.exports = mongoose.model('User', userSchema);

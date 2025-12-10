@@ -1,45 +1,37 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
-const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '15m';
+const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'dev-access-secret';
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret';
+const ACCESS_EXPIRES = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
+const REFRESH_EXPIRES = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 
-if (!JWT_SECRET) {
-  // Fail fast in development if secret missing
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('JWT_SECRET is required in production env');
-  } else {
-    console.warn('Warning: JWT_SECRET not set. Using a fallback insecure secret for dev only.');
-  }
-}
 
-function signAccessToken(userId, sessionId = null, extra = {}) {
-  const payload = {
-    sub: userId.toString(),
-    ...(sessionId ? { sid: sessionId } : {}),
-    ...extra,
-  };
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-}
+/**
+ * Generates a pair of tokens (Access + Refresh)
+ * @param {string} userId - The User's ID
+ * @returns {Object} { accessToken, refreshToken }
+ */
+exports.generateTokens = (userId) => {
+    const payload = { sub: userId };
 
-function verifyAccessToken(token) {
-  return jwt.verify(token, JWT_SECRET);
-}
+    const accessToken = jwt.sign(payload, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES });
+    const refreshToken = jwt.sign(payload, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES });
 
-function generateSessionId() {
-  if (typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return crypto.randomBytes(16).toString('hex'); // 32 hex chars
-}
+    return { accessToken, refreshToken };
+};
 
-function generateRandomToken(byteLength = 48) {
-  return crypto.randomBytes(byteLength).toString('hex'); // default 96 hex chars
-}
+// Verifies the short-lived Access Token
+exports.verifyAccessToken = (token) => {
+    return jwt.verify(token, ACCESS_SECRET);
+};
 
-module.exports = {
-  signAccessToken,
-  verifyAccessToken,
-  generateSessionId,
-  generateRandomToken,
+// Verifies the long-lived Refresh Token
+exports.verifyRefreshToken = (token) => {
+    return jwt.verify(token, REFRESH_SECRET);
+};
+
+// Generates a random token (useful for email verification/reset password later)
+exports.generateRandomToken = (byteLength = 32) => {
+    return crypto.randomBytes(byteLength).toString('hex');
 };

@@ -4,10 +4,11 @@ const authController = require('../controllers/authController');
 
 const router = express.Router();
 
-// All payment routes need the user to be logged in
-router.use(authController.protect);
+// Public Route
+router.get('/plans', paymentController.getAllPlans);
 
-// POST /api/v1/payment/checkout-session
+// Protected Routes
+router.use(authController.protect);
 router.post('/checkout-session', paymentController.createCheckoutSession);
 
 module.exports = router;

@@ -10,6 +10,7 @@ const globalErrorHandler = require('./controllers/errorController')
 const authRouter = require('./routes/authRouter')
 const paymentRouter = require('./routes/paymentRoutes')
 const webhookRouter = require('./routes/webhookRoutes');
+const jobRouter = require('./routes/jobRoutes');
  
 const app = express();
 
@@ -57,6 +58,7 @@ app.get('/health', (req, res) => {
 
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/payment', paymentRouter);
+app.use('/api/v1/jobs', jobRouter);
 
 // 2) UNHANDLED ROUTES
 app.all(/.*/, (req, res, next) => {

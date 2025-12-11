@@ -47,3 +47,18 @@ exports.createCheckoutSession = catchAsync(async (req, res, next) => {
     url: session.url, // Frontend will redirect window.location to this URL
   });
 });
+
+exports.getAllPlans = (req, res) => {
+  // Convert the plans object to an array for the frontend
+  // We exclude the secret stripePriceIds from the response if we want, 
+  // but sending them is fine since they are public identifiers.
+  const plansList = Object.keys(plans).map(key => ({
+    id: key,
+    ...plans[key]
+  }));
+
+  res.status(200).json({
+    status: 'success',
+    data: { plans: plansList }
+  });
+};

@@ -1,46 +1,60 @@
-require('dotenv').config();
 const mongoose = require('mongoose');
-const User = require('../src/models/userModel');
+require('dotenv').config();
+const User = require('../src/models/userModel'); // Adjust path if needed
 
-const seedAdmin = async () => {
+// 1. Connect to Database
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('✅ Connected to MongoDB for seeding'))
+  .catch(err => {
+    console.error('❌ DB Connection Error:', err);
+    process.exit(1);
+  });
+
+const seedUsers = async () => {
   try {
-    // 1. Connect to DB
-    await mongoose.connect(process.env.MONGO_URI);
-    console.log('📦 Connected to MongoDB');
+    // OPTIONAL: Clear existing users to avoid duplicates
+     await User.deleteMany({});
+     console.log('🧹 Old users cleared');
 
-    const adminEmail = 'admin@saas.com';
-    
-    // 2. Check if admin already exists
-    const existingUser = await User.findOne({ email: adminEmail });
-    if (existingUser) {
-      console.log('⚠️  Admin user already exists');
-      process.exit();
-    }
-
-    // 3. Create Admin User
-    // We don't need to manually hash password here because 
-    // your User Model's "pre('save')" hook handles hashing automatically!
-    const admin = new User({
-      name: 'Super Admin',
-      email: adminEmail,
-      password: 'securePassword123!', 
-      confirmPassword: 'securePassword123!', // Required by your validator
-      plan: 'enterprise', // Grants full access immediately
-      monthlyQuotaUsed: 0,
-      quotaResetAt: new Date(),
-      refreshTokens: [] // Start with empty sessions
+    // 3. Define the "Admin" / Agency User
+    const adminUser = new User({
+      name: 'Admin User',
+      email: 'admin@example.com',
+      password: '123456789', // The model's pre-save hook should hash this
+      confirmPassword: '123456789',
+      // The Important Bits for the New Model 👇
+      plan: 'agency',           // Give them the best plan
+      monthlyQuotaUsed: 0,      // Start fresh
+      whisperQuotaUsed: 0,      // Start fresh
+      quotaResetAt: new Date()
     });
 
-    await admin.save();
-    console.log('✅ Admin user created successfully');
-    console.log('📧 Email: admin@saas.com');
-    console.log('🔑 Pass: securePassword123!');
-    
-    process.exit();
+    await adminUser.save();
+    console.log('👑 Admin (Agency) User created: admin@example.com');
+
+    // 4. Define a "Free" User for testing limits
+    const freeUser = new User({
+      name: 'Free User',
+      email: 'free@example.com',
+      password: '123456789',
+      confirmPassword: '123456789',
+      plan: 'free',
+      monthlyQuotaUsed: 0,
+      whisperQuotaUsed: 0,
+      quotaResetAt: new Date()
+    });
+
+    await freeUser.save();
+    console.log('👶 Free User created: free@example.com');
+
+    console.log('✨ Seeding complete!');
+    process.exit(0);
+
   } catch (error) {
-    console.error('❌ Error seeding admin:', error);
+    console.error('❌ Seeding failed:', error.message);
     process.exit(1);
   }
 };
 
-seedAdmin();
+// Run the function
+seedUsers();

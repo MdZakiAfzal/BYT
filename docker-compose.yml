@@ -11,21 +11,27 @@ services:
       - .:/app
     ports:
       - "4000:4000"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     environment:
       - PORT=4000
       - MONGO_URI=${MONGO_URI}
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEMINI_API_KEY=${GOOGLE_API_KEY}
     command: ["npm", "run", "dev"]
 
   worker:
     build: .
     volumes:
       - .:/app
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     environment:
       - MONGO_URI=${MONGO_URI}
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEMINI_API_KEY=${GOOGLE_API_KEY}
     command: ["npm", "run", "worker"]

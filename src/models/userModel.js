@@ -35,13 +35,16 @@ const userSchema = new Schema({
     },
     plan: {
       type: String,
-      enum: ['free', 'pro', 'premium', 'enterprise'],
+      enum: ['free', 'pro', 'premium', 'agency'],
       default: 'free',
     },
     monthlyQuotaUsed: {
       type: Number,
-      default: 0,
-      min: 0,
+      default: 0
+    },
+    whisperQuotaUsed: {
+      type: Number,
+      default: 0
     },
     quotaResetAt: {
       type: Date,

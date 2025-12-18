@@ -28,13 +28,20 @@ const jobSchema = new mongoose.Schema({
     type: String,
     select: false 
   },
+  generatedSocials: {
+    linkedin: String,
+    twitter: String,
+    newsletter: String
+  },
   failedReason: {
     type: String
   },
   attemptNumber: {
     type: Number,
     default: 1
-  }
+  },
+  cost: { type: Number, default: 0 }, // To track credit usage
+  createdAt: { type: Date, default: Date.now }
 }, {
   timestamps: true
 });

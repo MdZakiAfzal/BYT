@@ -70,7 +70,7 @@ exports.getJob = catchAsync(async (req, res, next) => {
   const job = await Job.findOne({ 
     _id: req.params.id, 
     userId: req.user._id 
-  });
+  }).select('+generatedBlog');
 
   if (!job) {
     return next(new AppError('Job not found', 404));

@@ -5,6 +5,8 @@ const User = require('../models/userModel');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/AppError');
 const tokenService = require('../services/tokenService');
+const sendEmail = require('../utils/email');
+const crypto = require('crypto');
 
 // 1. Register User
 exports.register = catchAsync(async (req, res, next) => {
@@ -118,3 +120,107 @@ exports.getMe = (req, res, next) => {
         }
     });
 };
+
+// Forgot Password (User sends email, we send link)
+exports.forgotPassword = catchAsync(async (req, res, next) => {
+  // 1. Get user by email
+  const user = await User.findOne({ email: req.body.email });
+  if (!user) {
+    return next(new AppError('There is no user with that email address.', 404));
+  }
+
+  // 2. Generate random reset token
+  const resetToken = user.createPasswordResetToken();
+  await user.save({ validateBeforeSave: false });
+
+  // 3. Send it to user's email
+  const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+  const message = `Forgot your password? Submit a PATCH request with your new password and passwordConfirm to: ${resetURL}.\nIf you didn't forget your password, please ignore this email!`;
+
+  try {
+    await sendEmail({
+      email: user.email,
+      subject: 'Your Password Reset Token (Valid for 10 min)',
+      message
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Token sent to email! (Check your console logs)'
+    });
+  } catch (err) {
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save({ validateBeforeSave: false });
+    return next(new AppError('There was an error sending the email. Try again later!'), 500);
+  }
+});
+
+// 👇 7. Reset Password (User clicks link, provides new password)
+exports.resetPassword = catchAsync(async (req, res, next) => {
+  // 1. Get user based on the token
+  const hashedToken = crypto
+    .createHash('sha256')
+    .update(req.params.token)
+    .digest('hex');
+
+  const user = await User.findOne({
+    passwordResetToken: hashedToken,
+    passwordResetExpires: { $gt: Date.now() } // Token must be valid (time > now)
+  });
+
+  if (!user) {
+    return next(new AppError('Token is invalid or has expired', 400));
+  }
+
+  // 2. Set new password
+  user.password = req.body.password;
+  user.confirmPassword = req.body.confirmPassword;
+  
+  // Clear reset fields
+  user.passwordResetToken = undefined;
+  user.passwordResetExpires = undefined;
+  
+  await user.save(); // Pre-save hook will hash the password
+
+  // 3. Log the user in immediately (send new tokens)
+  const { accessToken, refreshToken } = tokenService.generateTokens(user._id);
+
+  // Initialize refresh tokens if needed
+  user.refreshTokens = [{ token: refreshToken }];
+  await user.save({ validateBeforeSave: false });
+
+  res.status(200).json({
+    status: 'success',
+    tokens: { accessToken, refreshToken },
+    data: { user }
+  });
+});
+
+// 👇 8. Update Password (Logged in user wants to change PW)
+exports.updatePassword = catchAsync(async (req, res, next) => {
+  // 1. Get user from collection
+  const user = await User.findById(req.user.id).select('+password');
+
+  // 2. Check if current password is correct
+  if (!(await user.correctPassword(req.body.currentPassword, user.password))) {
+    return next(new AppError('Your current password is wrong', 401));
+  }
+
+  // 3. Update password
+  user.password = req.body.password;
+  user.confirmPassword = req.body.confirmPassword;
+  await user.save();
+ 
+  // 4. Send new tokens
+  const { accessToken, refreshToken } =tokenService.generateTokens(user._id);
+  user.refreshTokens = [{ token: refreshToken }];
+  await user.save({ validateBeforeSave: false });
+
+  res.status(200).json({
+    status: 'success',
+    tokens: { accessToken, refreshToken },
+    data: { user }
+  });
+});

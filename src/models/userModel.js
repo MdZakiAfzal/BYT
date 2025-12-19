@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const { Schema } = mongoose;
+const crypto = require('crypto');
 
 const userSchema = new Schema({
     email: {
@@ -59,6 +60,8 @@ const userSchema = new Schema({
         createdAt: { type: Date, default: Date.now }
     }],
     passwordChangedAt: Date,
+    passwordResetToken: String,
+    passwordResetExpires: Date
 },{ 
     timestamps: true 
 });
@@ -94,5 +97,23 @@ userSchema.pre('save', async function () {
 
     this.passwordChangedAt = Date.now() - 1000;
 });
+
+// 5. Method: Generate Reset Token
+userSchema.methods.createPasswordResetToken = function() {
+    // 1. Generate a random 32-char hex string
+    const resetToken = crypto.randomBytes(32).toString('hex');
+
+    // 2. Encrypt it (sha256) and save to DB
+    this.passwordResetToken = crypto
+        .createHash('sha256')
+        .update(resetToken)
+        .digest('hex');
+
+    // 3. Set expiration (10 minutes)
+    this.passwordResetExpires = Date.now() + 10 * 60 * 1000;
+
+    // 4. Return the PLAIN token (to send via email)
+    return resetToken;
+};
 
 module.exports = mongoose.model('User', userSchema);

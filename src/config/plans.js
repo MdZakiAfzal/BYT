@@ -35,7 +35,7 @@ const plans = {
     maxDuration: 60,        // Max 1 hour
     stripePriceId: 'price_1ScmSa4AZ13rdecNHgBjL68G',
     features: { 
-        model: 'gemini-2.5-pro', 
+        model: 'gemini-2.5-flash', 
         blogLength: 'long', 
         seoOptimization: true, 
         exportFormats: ['txt', 'md', 'html'] 
@@ -49,7 +49,7 @@ const plans = {
     maxDuration: 120,       // Max 2 hours
     stripePriceId: 'price_1ScmTD4AZ13rdecNoNkGr3q7',
     features: { 
-        model: 'gemini-2.5-pro', 
+        model: 'gemini-2.5-flash', 
         blogLength: 'long', 
         seoOptimization: true, 
         exportFormats: ['txt', 'md', 'html', 'json'] 

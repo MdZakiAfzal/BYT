@@ -1,79 +1,95 @@
 const mongoose = require('mongoose');
+const fs = require('fs');
+const { GoogleAIFileManager } = require("@google/generative-ai/server");
 require('dotenv').config();
 const { Worker } = require('bullmq');
 const connection = require('../config/redis');
 const plans = require('../config/plans');
 const User = require('../models/userModel');
 const Job = require('../models/jobModel');
-const transcriptService = require('../services/transcriptService');
-const aiService = require('../services/aiService'); // 👈 The new Brain
-const ytdl = require('@distube/ytdl-core'); // 👈 The Safety Check
+const youtubeService = require('../services/youtubeService'); // 👈 NEW SERVICE
+const aiService = require('../services/aiService');
 
-// 1. Connect to MongoDB
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('📦 Worker connected to MongoDB'))
-  .catch(err => {
-    console.error('❌ DB Error:', err);
-    process.exit(1);
-  });
+  .catch(err => { console.error('❌ DB Error:', err); process.exit(1); });
 
-// 2. The Job Processor
 const processJob = async (job) => {
   const { jobId, youtubeUrl } = job.data;
   console.log(`\n🎬 [Job ${jobId}] Processing started...`);
+  
+  let tempFilePath = null;
 
   try {
-    // A. Mark as Processing
     await Job.findByIdAndUpdate(jobId, { status: 'processing' });
-
-    // B. Get Job & User Data
     const jobDoc = await Job.findById(jobId);
-    if (!jobDoc) throw new Error('Job not found in DB');
-    
     const user = await User.findById(jobDoc.userId);
-    if (!user) throw new Error('User not found');
-
     const userPlan = plans[user.plan] || plans.free;
 
-    // --- 🛡️ SAFETY CHECK: DURATION LIMIT ---
-    console.log(`[Job ${jobId}] Checking duration...`);
-    const info = await ytdl.getBasicInfo(youtubeUrl);
-    const durationMins = Math.ceil(info.videoDetails.lengthSeconds / 60);
-    const limit = userPlan.maxDuration;
+    // --- 1. GET METADATA (via yt-dlp) ---
+    const videoData = await youtubeService.getVideoData(youtubeUrl);
+    const videoId = videoData.id;
+    const durationMins = Math.ceil(videoData.duration / 60);
 
-    if (durationMins > limit) {
-      throw new Error(`Video is ${durationMins} mins. Your plan limit is ${limit} mins.`);
+    if (durationMins > userPlan.maxDuration) {
+      throw new Error(`Video is ${durationMins} mins. Limit is ${userPlan.maxDuration} mins.`);
     }
 
-    // --- STEP 1: GET TRANSCRIPT ---
+    let inputForAI = ""; 
     let transcript = jobDoc.transcript;
-    let videoId = jobDoc.videoId;
 
+    // --- 2. PLAN A: TRANSCRIPT ---
     if (!transcript) {
-        console.log(`[Job ${jobId}] Fetching transcript from YouTube...`);
-        
-        // Try the Scraper
-        const result = await transcriptService.fetchTranscript(youtubeUrl);
-        transcript = result.text;
-        videoId = result.videoId;
+        try {
+            console.log(`[Job ${jobId}] Trying Plan A: Transcript...`);
+            
+            transcript = await youtubeService.fetchTranscript(videoData);
+            inputForAI = transcript;
+            
+            await User.findByIdAndUpdate(user._id, { $inc: { monthlyQuotaUsed: 1 } });
+            await Job.findByIdAndUpdate(jobId, { transcript, videoId });
+            console.log('✅ Plan A Success.');
 
-        // ✅ Count 1 Standard Usage
-        await User.findByIdAndUpdate(user._id, { $inc: { monthlyQuotaUsed: 1 } });
+        } catch (err) {
+            console.warn(`⚠️ Plan A Failed (${err.message}). Switching to Plan B...`);
 
-        // Save progress
-        await Job.findByIdAndUpdate(jobId, { transcript, videoId });
+            // --- 3. PLAN B: AUDIO FALLBACK ---
+            if (user.whisperQuotaUsed >= userPlan.whisperQuota) {
+                throw new Error('Transcript failed and Audio quota exceeded.');
+            }
+
+            console.log(`[Job ${jobId}] Downloading Audio (Plan B)...`);
+            // yt-dlp handles the download
+            tempFilePath = await youtubeService.downloadAudio(youtubeUrl, videoId);
+
+            console.log(`[Job ${jobId}] Uploading audio to Gemini...`);
+            const uploadResponse = await fileManager.uploadFile(tempFilePath, {
+                mimeType: "audio/mp4",
+                displayName: `Job-${jobId}`,
+            });
+
+            let file = await fileManager.getFile(uploadResponse.file.name);
+            while (file.state === "PROCESSING") {
+                await new Promise((r) => setTimeout(r, 2000));
+                file = await fileManager.getFile(uploadResponse.file.name);
+            }
+
+            if (file.state === "FAILED") throw new Error("Gemini failed to process audio.");
+
+            inputForAI = file.uri;
+            await User.findByIdAndUpdate(user._id, { $inc: { whisperQuotaUsed: 1 } });
+            console.log('✅ Plan B Success.');
+        }
+    } else {
+        inputForAI = transcript;
     }
-    
-    console.log(`✅ Transcript ready (${transcript.length} chars)`);
 
-    // --- STEP 2: GENERATE CONTENT BUNDLE (AI) ---
-    console.log(`[Job ${jobId}] Generating Content Bundle with ${userPlan.features.model}...`);
-    
-    const bundle = await aiService.generateContentBundle(transcript, userPlan.features);
-    
-    console.log(`✅ Content generated! Blog + Socials created.`);
+    // --- 4. GENERATE CONTENT ---
+    console.log(`[Job ${jobId}] Generating Content...`);
+    const bundle = await aiService.generateContentBundle(inputForAI, userPlan.features);
 
-    // --- STEP 3: SAVE EVERYTHING ---
     await Job.findByIdAndUpdate(jobId, { 
         status: 'completed',
         generatedBlog: bundle.blogPost,
@@ -82,38 +98,22 @@ const processJob = async (job) => {
             twitter: bundle.twitterThread,
             newsletter: bundle.newsletter
         },
-        cost: 1 // For our own tracking
+        cost: 1
     });
 
-    console.log(`🎉 [Job ${jobId}] Finished successfully.`);
-    return { status: 'done' };
+    console.log(`🎉 [Job ${jobId}] Finished!`);
 
   } catch (err) {
-    console.error(`❌ [Job ${jobId}] Error inside processor:`, err.message);
-    // Let the 'failed' handler below take care of the DB update
-    throw err; 
+    console.error(`❌ [Job ${jobId}] Failed:`, err.message);
+    await Job.findByIdAndUpdate(jobId, { status: 'failed', failedReason: err.message });
+  } finally {
+    if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
   }
 };
 
-// 3. Initialize Worker
-const worker = new Worker('video-processing', processJob, {
-  connection,
-  concurrency: 2
+const worker = new Worker('video-processing', processJob, { 
+  connection, 
+  concurrency: 2,
+  lockDuration: 600000 // 10 mins
 });
-
-// 4. Global Error Listeners
-worker.on('completed', (job) => {
-  console.log(`✨ Job ${job.id} done.`);
-});
-
-worker.on('failed', async (job, err) => {
-  console.error(`💥 Job ${job.id} failed: ${err.message}`);
-  if (job && job.data && job.data.jobId) {
-    await Job.findByIdAndUpdate(job.data.jobId, { 
-      status: 'failed',
-      failedReason: err.message
-    });
-  }
-});
-
-console.log('🚀 Worker System started. Listening for jobs...');
+console.log('🚀 Worker System started.');

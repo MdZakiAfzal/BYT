@@ -7,12 +7,11 @@
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
+    "dev": "nodemon --ignore '*-player-script.js' src/server.js",
     "start": "node src/server.js",
     "worker": "node src/workers/index.js"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^4.16.12",
     "@google/generative-ai": "^0.24.1",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
@@ -30,7 +29,8 @@
     "morgan": "^1.10.1",
     "stripe": "^20.0.0",
     "uuid": "^13.0.0",
-    "youtube-transcript": "^1.2.1"
+    "youtube-transcript": "^1.2.1",
+    "youtubei.js": "^16.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"

@@ -12,9 +12,11 @@ const aiService = require('../services/aiService');
 
 const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
 
+/* we merged the worker to the api
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('📦 Worker connected to MongoDB'))
   .catch(err => { console.error('❌ DB Error:', err); process.exit(1); });
+*/
 
 const processJob = async (job) => {
   const { jobId, youtubeUrl } = job.data;
@@ -111,9 +113,13 @@ const processJob = async (job) => {
   }
 };
 
-const worker = new Worker('video-processing', processJob, { 
-  connection, 
-  concurrency: 2,
-  lockDuration: 600000 // 10 mins
-});
-console.log('🚀 Worker System started.');
+const startWorker = () => {
+    const worker = new Worker('video-processing', processJob, { 
+      connection, 
+      concurrency: 1, // ⚠️ KEEP THIS 1 to save RAM on free tier
+      lockDuration: 600000 
+    });
+    console.log('🚀 Worker System started (Embedded Mode).');
+};
+
+module.exports = startWorker;

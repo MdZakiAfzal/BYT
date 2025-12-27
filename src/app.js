@@ -11,7 +11,7 @@ const authRouter = require('./routes/authRouter')
 const paymentRouter = require('./routes/paymentRoutes')
 const webhookRouter = require('./routes/webhookRoutes');
 const jobRouter = require('./routes/jobRoutes');
-const waitlistRouter = require('./src/routes/waitlistRoutes');
+const waitlistRouter = require('./routes/waitlistRoutes');
  
 const app = express();
 

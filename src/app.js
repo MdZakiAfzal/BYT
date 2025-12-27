@@ -11,6 +11,7 @@ const authRouter = require('./routes/authRouter')
 const paymentRouter = require('./routes/paymentRoutes')
 const webhookRouter = require('./routes/webhookRoutes');
 const jobRouter = require('./routes/jobRoutes');
+const waitlistRouter = require('./src/routes/waitlistRoutes');
  
 const app = express();
 
@@ -56,6 +57,7 @@ app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
 
+app.use('/api/v1/waitlist', waitlistRouter);
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/payment', paymentRouter);
 app.use('/api/v1/jobs', jobRouter);

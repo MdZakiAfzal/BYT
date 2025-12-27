@@ -41,7 +41,11 @@ const jobSchema = new mongoose.Schema({
     default: 1
   },
   cost: { type: Number, default: 0 }, // To track credit usage
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  isPublic: {
+    type: Boolean,
+    default: false
+  },
 }, {
   timestamps: true
 });

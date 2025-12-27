@@ -82,7 +82,7 @@ exports.getJob = catchAsync(async (req, res, next) => {
   });
 });
 
-// 4. Retry Job
+// 4. Manual Retry Job
 exports.retryJob = catchAsync(async (req, res, next) => {
   const job = await Job.findOne({ 
     _id: req.params.id, 
@@ -113,6 +113,63 @@ exports.retryJob = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     message: 'Job has been re-queued',
+    data: { job }
+  });
+});
+
+// 5. Update/Save Job Content (For the "Edit & Save" feature)
+exports.updateJobContent = catchAsync(async (req, res, next) => {
+  const job = await Job.findOne({ _id: req.params.id, userId: req.user._id });
+
+  if (!job) {
+    return next(new AppError('Job not found or not owned by you', 404));
+  }
+
+  // Allow updating blog, socials, etc.
+  if (req.body.generatedBlog) job.generatedBlog = req.body.generatedBlog;
+  if (req.body.generatedSocials) job.generatedSocials = req.body.generatedSocials;
+
+  await job.save();
+
+  res.status(200).json({
+    status: 'success',
+    data: { job }
+  });
+});
+
+// 6. Toggle Public Status (For the "Share" button)
+exports.togglePublicStatus = catchAsync(async (req, res, next) => {
+  const job = await Job.findOne({ _id: req.params.id, userId: req.user._id });
+
+  if (!job) {
+    return next(new AppError('Job not found', 404));
+  }
+
+  // Toggle true/false
+  job.isPublic = !job.isPublic;
+  await job.save();
+
+  res.status(200).json({
+    status: 'success',
+    data: { 
+      isPublic: job.isPublic,
+      publicUrl: job.isPublic ? `/share/${job._id}` : null 
+    }
+  });
+});
+
+// 7. Get Public Job (For the generic "Viewer" page - NO AUTH REQUIRED)
+exports.getPublicJob = catchAsync(async (req, res, next) => {
+  // We do NOT check req.user here because the viewer is a stranger
+  const job = await Job.findById(req.params.id).select('+generatedBlog');
+
+  // Security Check: Only show if the owner marked it as public
+  if (!job || !job.isPublic) {
+    return next(new AppError('This page is private or does not exist.', 404));
+  }
+
+  res.status(200).json({
+    status: 'success',
     data: { job }
   });
 });

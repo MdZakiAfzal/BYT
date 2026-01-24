@@ -31,8 +31,19 @@ const processJob = async (job) => {
     // --- 1. GET METADATA (via yt-dlp) ---
     const videoData = await youtubeService.getVideoData(youtubeUrl);
     const videoId = videoData.id;
-    const durationMins = Math.ceil(videoData.duration / 60);
 
+    // Save MetaData To DB:
+    await Job.findByIdAndUpdate(jobId, {
+        videoMetadata: {
+            title: videoData.title,
+            description: videoData.description,
+            thumbnailUrl: videoData.thumbnail,
+            duration: videoData.duration,
+            author: videoData.uploader
+        }
+    });
+
+    const durationMins = Math.ceil(videoData.duration / 60);
     if (durationMins > userPlan.maxDuration) {
       throw new Error(`Video is ${durationMins} mins. Limit is ${userPlan.maxDuration} mins.`);
     }
@@ -88,15 +99,23 @@ const processJob = async (job) => {
 
     // --- 4. GENERATE CONTENT ---
     console.log(`[Job ${jobId}] Generating Content...`);
-    const bundle = await aiService.generateContentBundle(inputForAI, userPlan.features);
+    const bundle = await aiService.generateContentBundle(inputForAI, {
+        ...userPlan.features,
+        videoTitle: videoData.title,          // Context
+        videoDescription: videoData.description, // Context
+        options: jobDoc.options               // User Preferences
+    });
 
     await Job.findByIdAndUpdate(jobId, { 
         status: 'completed',
         generatedBlog: bundle.blogPost,
         generatedSocials: {
-            linkedin: bundle.linkedinPost,
+          viralHooks: bundle.viralHooks,
+          socials: {
+            linkedin: bundle.linkedinPost, // Actually "LinkedIn & Facebook"
             twitter: bundle.twitterThread,
             newsletter: bundle.newsletter
+          }
         },
         cost: 1
     });

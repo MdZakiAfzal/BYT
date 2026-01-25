@@ -14,6 +14,30 @@ const jobSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  videoMetadata: {
+    title: String,
+    description: String,
+    thumbnailUrl: String,
+    duration: Number,
+    author: String
+  },
+  // 🆕 NEW: Store User Options for this Job
+  options: {
+    tone: { 
+      type: String, 
+      enum: ['professional', 'funny', 'completed', 'failed'],
+      default: 'professional' },
+    perspective: { 
+      type: String, 
+      enum: ['first', 'second', 'third'],
+      default: 'first' 
+    }, 
+    length: { 
+      type: String, 
+      enum: ['short', 'medium', 'long', 'deep-dive'],
+      default: 'medium' 
+    }      // short, medium, long
+  },
   status: {
     type: String,
     enum: ['queued', 'processing', 'completed', 'failed'],
@@ -29,9 +53,12 @@ const jobSchema = new mongoose.Schema({
     select: false 
   },
   generatedSocials: {
-    linkedin: String,
-    twitter: String,
-    newsletter: String
+    viralHooks: [String],
+    socials: {
+      linkedin: String,
+      twitter: String,
+      newsletter: String
+    }
   },
   failedReason: {
     type: String

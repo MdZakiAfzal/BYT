@@ -13,7 +13,7 @@ const extractVideoId = (url) => {
 };
 
 exports.createJob = catchAsync(async (req, res, next) => {
-  const { youtubeUrl } = req.body;
+  const { youtubeUrl, tone, perspective, length } = req.body;
   const user = req.user; // From protect middleware
 
   // 1. Validate Input
@@ -29,13 +29,28 @@ exports.createJob = catchAsync(async (req, res, next) => {
     return next(new AppError(`Monthly quota exceeded for ${userPlan.name} plan. Please upgrade!`, 403));
   }
 
+  const requestedLength = length || 'short';
+  if (!userPlan.features.allowedLengths.includes(requestedLength)) {
+    // If they ask for 'long' but are on Free, force 'short' or error
+    return next(new AppError(`The '${requestedLength}' length is not available on your plan.`, 403));
+  }
+
+  // If they send custom tone but plan doesn't allow it, revert to default
+  const finalTone = userPlan.features.toneControls ? (tone || 'professional') : 'professional';
+  const finalPerspective = userPlan.features.toneControls ? (perspective || 'first') : 'first';
+
   // 3. Create Job in DB (Status: queued)
   const newJob = await Job.create({
     userId: user._id,
     youtubeUrl,
     videoId,
     status: 'queued',
-    attemptNumber: user.monthlyQuotaUsed + 1
+    attemptNumber: user.monthlyQuotaUsed + 1,
+    options: {
+      tone: finalTone,
+      perspective: finalPerspective,
+      length: requestedLength
+    }
   });
 
   // 4. Add to Redis Queue (Async)

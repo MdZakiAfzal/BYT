@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const app = require('./app');
 const startWorker = require('./workers/index');
+// This is the deployed server
 
 const PORT = process.env.PORT || 4000;
 const MONGO_URI = process.env.MONGO_URI;

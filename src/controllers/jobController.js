@@ -2,6 +2,7 @@ const Job = require('../models/jobModel');
 const User = require('../models/userModel');
 const plans = require('../config/plans');
 const queueService = require('../services/queueService');
+const aiService = require('../services/aiService');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/AppError');
 
@@ -205,5 +206,27 @@ exports.deleteJob = catchAsync(async (req, res, next) => {
   res.status(204).json({
     status: 'success',
     data: null
+  });
+});
+
+// 🆕 9. CHAT WITH JOB (The Co-Pilot)
+exports.chatWithJob = catchAsync(async (req, res, next) => {
+  const { message, selectedText } = req.body;
+  
+  // 1. Get Job & Verify Ownership
+  const job = await Job.findOne({ _id: req.params.id, userId: req.user._id });
+  if (!job) return next(new AppError('Job not found', 404));
+
+  // 2. Call AI Service
+  const rewrittenText = await aiService.chatWithContent(
+    { videoTitle: job.videoMetadata.title },
+    message,      // e.g., "Make it funnier"
+    selectedText  // The text user highlighted
+  );
+
+  // 3. Return the suggestion
+  res.status(200).json({
+    status: 'success',
+    data: { rewrittenText }
   });
 });

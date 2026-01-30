@@ -15,6 +15,12 @@ const waitlistRouter = require('./routes/waitlistRoutes');
  
 const app = express();
 
+// CORS 
+app.use(cors({
+  origin: process.env.FRONTEND_URL, // TODO: replace * with your React domain in production
+  credentials: true
+}));
+
 // Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
@@ -29,16 +35,10 @@ app.use(
 );
 
 // Body parser, reading data from body into req.body
-app.use(express.json({ limit: '5kb' }));
+app.use(express.json({ limit: '1mb' }));
 
 // Security HTTP headers
 app.use(helmet());
-
-// CORS 
-app.use(cors({
-  origin: process.env.FRONTEND_URL, // TODO: replace * with your React domain in production
-  credentials: true
-}));
 
 // Prevent parameter pollution
 app.use(hpp());

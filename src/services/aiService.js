@@ -4,6 +4,14 @@ const AppError = require('../utils/AppError');
 // Access API Key
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// 🆕 ADDED: Strict Word Count Limits (Prevents 5,000 word hallucinations)
+const LENGTH_GUIDELINES = {
+  'short': 'approx. 800 words',
+  'medium': 'approx. 1,500 words',
+  'long': 'approx. 2,500 words',
+  'deep-dive': 'approx. 4,000 words'
+};
+
 // ✂️ ROBUST DELIMITER PARSER
 // This function splits the massive text block by our custom headers.
 // It is immune to "bad quotes" or "newlines" inside the content.
@@ -79,9 +87,12 @@ exports.generateContentBundle = async (input, features) => {
     // Default Fallbacks
     const tone = features.options?.tone || 'professional';
     const perspective = features.options?.perspective || 'first';
-    const length = features.options?.length || 'medium';
+    
+    // 🆕 UPDATED: Map user choice to concrete guidelines
+    const userLengthChoice = features.options?.length || 'medium';
+    const lengthInstruction = LENGTH_GUIDELINES[userLengthChoice] || 'approx. 1,500 words';
 
-    console.log(`🤖 [AI Service] Generating with ${modelName} | Tone: ${tone} | Length: ${length}`);
+    console.log(`🤖 [AI Service] Generating with ${modelName} | Tone: ${tone} | Length: ${lengthInstruction}`);
 
     let userContent;
 
@@ -113,7 +124,7 @@ exports.generateContentBundle = async (input, features) => {
       CONFIGURATION:
       - Tone: ${tone} (Apply this strictly)
       - Perspective: ${perspective} Person POV
-      - Length: ${length} (If "Deep Dive", write extensively)
+      - Length: ${lengthInstruction} (Do NOT exceed this significantly)
       
       OUTPUT REQUIREMENTS:
 
@@ -121,7 +132,7 @@ exports.generateContentBundle = async (input, features) => {
          - Generate 10 clickbait/viral titles.
       
       2. BLOG POST:
-         - Write a ${length} blog post in Markdown.
+         - Write a ${lengthInstruction} blog post in Markdown.
          - Use H1, H2, H3 headers.
          - If ${features.seoOptimization ? 'TRUE' : 'FALSE'} is TRUE: Optimize for high-traffic keywords related to the Title.
          - Style: ${tone}.
@@ -182,5 +193,39 @@ exports.generateContentBundle = async (input, features) => {
   } catch (err) {
     console.error('❌ [AI Service] Error:', err.message);
     throw new AppError('AI Failed to generate content. Please try again.', 500);
+  }
+};
+
+// 🆕 ADDED: CHAT / EDIT FUNCTION (The Co-Pilot)
+exports.chatWithContent = async (context, userQuery, selectedText) => {
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    
+    const prompt = `
+      You are an expert editor.
+      
+      CONTEXT OF THE VIDEO:
+      - Title: "${context.videoTitle}"
+      
+      USER INSTRUCTION: "${userQuery}"
+      
+      CONTENT TO EDIT:
+      """
+      ${selectedText}
+      """
+      
+      YOUR TASK:
+      - Rewrite the "CONTENT TO EDIT" based strictly on the "USER INSTRUCTION".
+      - Do NOT output conversational filler like "Here is the rewritten text".
+      - Output ONLY the new text.
+      - Maintain Markdown formatting.
+    `;
+
+    const result = await model.generateContent(prompt);
+    return (await result.response.text()).trim();
+
+  } catch (err) {
+    console.error('❌ [AI Chat] Error:', err.message);
+    throw new AppError('Failed to process edit request', 500);
   }
 };

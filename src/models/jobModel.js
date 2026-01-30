@@ -21,11 +21,12 @@ const jobSchema = new mongoose.Schema({
     duration: Number,
     author: String
   },
+  isTruncated: { type: Boolean, default: false },
   // 🆕 NEW: Store User Options for this Job
   options: {
     tone: { 
       type: String, 
-      enum: ['professional', 'funny', 'completed', 'failed'],
+      enum: ['professional', 'casual', 'humorous', 'controversial', 'educational', 'funny'],
       default: 'professional' },
     perspective: { 
       type: String, 

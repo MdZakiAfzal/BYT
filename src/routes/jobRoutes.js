@@ -14,7 +14,8 @@ router.route('/')
   .post(jobController.createJob);
 router.route('/:id')
   .get(jobController.getJob)
-  .patch(jobController.updateJobContent);
+  .patch(jobController.updateJobContent)
+  .delete(jobController.deleteJob);
 router.post('/:id/retry', jobController.retryJob);
 router.patch('/:id/publish', jobController.togglePublicStatus);
 

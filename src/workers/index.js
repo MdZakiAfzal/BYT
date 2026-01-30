@@ -7,7 +7,7 @@ const connection = require('../config/redis');
 const plans = require('../config/plans');
 const User = require('../models/userModel');
 const Job = require('../models/jobModel');
-const youtubeService = require('../services/youtubeService'); // 👈 NEW SERVICE
+const youtubeService = require('../services/youtubeService');
 const aiService = require('../services/aiService');
 
 const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
@@ -28,11 +28,21 @@ const processJob = async (job) => {
     const user = await User.findById(jobDoc.userId);
     const userPlan = plans[user.plan] || plans.free;
 
-    // --- 1. GET METADATA (via yt-dlp) ---
+    // --- 1. GET METADATA ---
     const videoData = await youtubeService.getVideoData(youtubeUrl);
     const videoId = videoData.id;
 
-    // Save MetaData To DB:
+    // TRUNCATION LOGIC
+    const durationMins = Math.ceil(videoData.duration / 60);
+    let effectiveLimitSeconds = null;
+    let isTruncated = false;
+
+    if (durationMins > userPlan.maxDuration) {
+        console.warn(`⚠️ Video (${durationMins}m) exceeds plan (${userPlan.maxDuration}m). Truncating processing.`);
+        effectiveLimitSeconds = userPlan.maxDuration * 60; 
+        isTruncated = true;
+    }
+
     await Job.findByIdAndUpdate(jobId, {
         videoMetadata: {
             title: videoData.title,
@@ -43,11 +53,6 @@ const processJob = async (job) => {
         }
     });
 
-    const durationMins = Math.ceil(videoData.duration / 60);
-    if (durationMins > userPlan.maxDuration) {
-      throw new Error(`Video is ${durationMins} mins. Limit is ${userPlan.maxDuration} mins.`);
-    }
-
     let inputForAI = ""; 
     let transcript = jobDoc.transcript;
 
@@ -55,8 +60,7 @@ const processJob = async (job) => {
     if (!transcript) {
         try {
             console.log(`[Job ${jobId}] Trying Plan A: Transcript...`);
-            
-            transcript = await youtubeService.fetchTranscript(videoData);
+            transcript = await youtubeService.fetchTranscript(videoData, effectiveLimitSeconds);
             inputForAI = transcript;
             
             await User.findByIdAndUpdate(user._id, { $inc: { monthlyQuotaUsed: 1 } });
@@ -72,8 +76,7 @@ const processJob = async (job) => {
             }
 
             console.log(`[Job ${jobId}] Downloading Audio (Plan B)...`);
-            // yt-dlp handles the download
-            tempFilePath = await youtubeService.downloadAudio(youtubeUrl, videoId);
+            tempFilePath = await youtubeService.downloadAudio(youtubeUrl, videoId, effectiveLimitSeconds);
 
             console.log(`[Job ${jobId}] Uploading audio to Gemini...`);
             const uploadResponse = await fileManager.uploadFile(tempFilePath, {
@@ -101,21 +104,46 @@ const processJob = async (job) => {
     console.log(`[Job ${jobId}] Generating Content...`);
     const bundle = await aiService.generateContentBundle(inputForAI, {
         ...userPlan.features,
-        videoTitle: videoData.title,          // Context
-        videoDescription: videoData.description, // Context
-        options: jobDoc.options               // User Preferences
+        videoTitle: videoData.title,
+        videoDescription: videoData.description,
+        options: jobDoc.options
     });
 
+    let finalBlogText = bundle.blogPost;
+
+    // 🆕 THUMBNAIL INJECTION (Robust)
+    // We do NOT inject the Warning text here anymore.
+    if (videoData.thumbnail) {
+        const splitText = finalBlogText.split('\n\n');
+        let insertionIndex = 1; // Default
+        
+        for (let i = 0; i < splitText.length; i++) {
+            const block = splitText[i].trim();
+            // Skip headers (#) to find the first real body text
+            if (block.length > 0 && !block.startsWith('#')) {
+                insertionIndex = i + 1;
+                break;
+            }
+        }
+        if (insertionIndex > splitText.length) insertionIndex = splitText.length;
+
+        const imageMarkdown = `![Video Thumbnail](${videoData.thumbnail})`;
+        splitText.splice(insertionIndex, 0, imageMarkdown);
+        finalBlogText = splitText.join('\n\n');
+    }
+
+    // --- 5. SAVE RESULT ---
     await Job.findByIdAndUpdate(jobId, { 
         status: 'completed',
-        generatedBlog: bundle.blogPost,
+        generatedBlog: finalBlogText,
+        isTruncated: isTruncated, // 👈 Saving the flag for Frontend to handle
         generatedSocials: {
-          viralHooks: bundle.viralHooks,
-          socials: {
-            linkedin: bundle.linkedinPost, // Actually "LinkedIn & Facebook"
-            twitter: bundle.twitterThread,
-            newsletter: bundle.newsletter
-          }
+            viralHooks: bundle.viralHooks,
+            socials: {
+                linkedin: bundle.linkedinPost,
+                twitter: bundle.twitterThread,
+                newsletter: bundle.newsletter
+            }
         },
         cost: 1
     });
@@ -133,6 +161,6 @@ const processJob = async (job) => {
 const worker = new Worker('video-processing', processJob, { 
   connection, 
   concurrency: 2,
-  lockDuration: 600000 // 10 mins
+  lockDuration: 600000 
 });
 console.log('🚀 Worker System started.');

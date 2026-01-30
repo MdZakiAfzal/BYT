@@ -8,9 +8,9 @@ const plans = {
     stripePriceId: null,
     features: { 
         model: 'gemini-2.5-flash', // Fast & Cheap
-        allowedLengths: ['short'], 
+        allowedLengths: ['short', 'medium', 'long'], 
         seoOptimization: false, 
-        exportFormats: ['txt'],
+        exportFormats: ['txt', 'md'],
         
         // Feature Gates
         toneControls: false,
@@ -29,9 +29,9 @@ const plans = {
     stripePriceId: 'price_1ScmQK4AZ13rdecNERIaiuQW',
     features: { 
         model: 'gemini-2.5-flash', // Fast & Cheap
-        allowedLengths: ['short', 'medium'], 
+        allowedLengths: ['short', 'medium', 'long'], 
         seoOptimization: true, 
-        exportFormats: ['txt', 'md'],
+        exportFormats: ['txt', 'md', 'html'],
         
         // Feature Gates
         toneControls: true,
@@ -50,7 +50,7 @@ const plans = {
     stripePriceId: 'price_1ScmSa4AZ13rdecNHgBjL68G',
     features: { 
         model: 'gemini-2.5-flash', // 🧠 SMARTER Model
-        allowedLengths: ['short', 'medium', 'long'], 
+        allowedLengths: ['short', 'medium', 'long', 'deep-dive'], 
         seoOptimization: true, 
         exportFormats: ['txt', 'md', 'html'],
         
@@ -71,7 +71,7 @@ const plans = {
     stripePriceId: 'price_1ScmTD4AZ13rdecNoNkGr3q7', 
     features: { 
         model: 'gemini-2.5-flash', // 🧠 SMARTER Model
-        allowedLengths: ['short', 'medium', 'long', 'deep_dive'], 
+        allowedLengths: ['short', 'medium', 'long', 'deep-dive'], 
         seoOptimization: true, 
         exportFormats: ['txt', 'md', 'html'], // JSON removed
         

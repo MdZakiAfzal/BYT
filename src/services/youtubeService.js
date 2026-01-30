@@ -13,24 +13,28 @@ const runYtDlp = async (args) => {
 
 exports.getVideoData = async (url) => {
     console.log(`🔍 [yt-dlp] Fetching metadata: ${url}`);
-    
-    // 1. Fetch Metadata & Transcript URL
-    // --dump-json: Gets all info
-    // --no-playlist: Ensures we only get one video
     const jsonOutput = await runYtDlp(`--dump-json --no-playlist "${url}"`);
-    const data = JSON.parse(jsonOutput);
-    
-    return data;
+    return JSON.parse(jsonOutput);
 };
 
-exports.downloadAudio = async (url, videoId) => {
-    console.log(`mic [yt-dlp] Downloading Audio: ${url}`);
+// 🆕 UPDATED: Accepts limitSeconds to download only part of the audio
+exports.downloadAudio = async (url, videoId, limitSeconds = null) => {
+    console.log(`🎤 [yt-dlp] Downloading Audio: ${url} ${limitSeconds ? `(Limit: ${limitSeconds}s)` : ''}`);
     const outputPath = path.join('/tmp', `temp-${videoId}.m4a`);
 
-    // 2. Download Audio
-    // -f bestaudio[ext=m4a]: Gets native audio (no conversion needed)
-    // -o: Output path
-    await runYtDlp(`-f "bestaudio[ext=m4a]/bestaudio" -o "${outputPath}" "${url}"`);
+    // Build arguments
+    let args = `-f "bestaudio[ext=m4a]/bestaudio" -o "${outputPath}"`;
+    
+    // ✂️ PARTIAL DOWNLOAD LOGIC
+    if (limitSeconds) {
+        // syntax: --download-sections "*00:00-00:15:00" (start-end)
+        // We use timestamp in seconds
+        args += ` --download-sections "*0-inf" --downloader ffmpeg --downloader-args "ffmpeg_i:-t ${limitSeconds}"`; 
+        // Note: reliable truncation often requires ffmpeg args or post-processing, 
+        // but passing "-t" to ffmpeg is the cleanest way with yt-dlp.
+    }
+
+    await runYtDlp(`${args} "${url}"`);
     
     if (!fs.existsSync(outputPath)) {
         throw new Error("Audio file not found after download.");
@@ -39,27 +43,26 @@ exports.downloadAudio = async (url, videoId) => {
     return outputPath;
 };
 
-exports.fetchTranscript = async (data) => {
-    // 3. Extract Transcript from Metadata
-    // yt-dlp returns 'automatic_captions' or 'subtitles'
+// 🆕 UPDATED: Accepts limitSeconds to filter transcript text
+exports.fetchTranscript = async (data, limitSeconds = null) => {
     const captions = data.automatic_captions || data.subtitles;
     
     if (!captions || !captions.en) {
         throw new Error("No English captions found.");
     }
 
-    // Get the 'json3' format URL (cleanest structure)
     const jsonFormat = captions.en.find(c => c.ext === 'json3') || captions.en[0];
-    const transcriptUrl = jsonFormat.url;
-
-    console.log(`📜 [yt-dlp] Fetching transcript JSON...`);
     
-    // Fetch the actual text
-    const response = await fetch(transcriptUrl);
+    console.log(`📜 [yt-dlp] Fetching transcript JSON...`);
+    const response = await fetch(jsonFormat.url);
     const transcriptData = await response.json();
 
-    // Parse it
+    // Limit in milliseconds
+    const limitMs = limitSeconds ? limitSeconds * 1000 : Infinity;
+
     const text = transcriptData.events
+        // ✂️ PARTIAL TRANSCRIPT LOGIC
+        .filter(e => !limitSeconds || (e.tStartMs || 0) < limitMs) 
         .filter(e => e.segs)
         .map(e => e.segs.map(s => s.utf8).join(''))
         .join(' ')

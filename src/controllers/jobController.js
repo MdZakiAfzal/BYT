@@ -188,3 +188,22 @@ exports.getPublicJob = catchAsync(async (req, res, next) => {
     data: { job }
   });
 });
+
+// 🆕 8. Delete Job
+exports.deleteJob = catchAsync(async (req, res, next) => {
+  // Check userId to ensure they only delete their own jobs
+  const job = await Job.findOneAndDelete({ 
+    _id: req.params.id, 
+    userId: req.user._id 
+  });
+
+  if (!job) {
+    return next(new AppError('Job not found or not owned by you', 404));
+  }
+
+  // We send 204 (No Content) which is standard for deletions
+  res.status(204).json({
+    status: 'success',
+    data: null
+  });
+});

@@ -132,6 +132,10 @@ const processJob = async (job) => {
         finalBlogText = splitText.join('\n\n');
     }
 
+    if (!userPlan.features.removeWatermark) {
+        finalBlogText += `\n\n---\n*Generated with BYT*`;
+    }
+
     // --- 5. SAVE RESULT ---
     await Job.findByIdAndUpdate(jobId, { 
         status: 'completed',

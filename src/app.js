@@ -9,9 +9,9 @@ const AppError = require('./utils/AppError');
 const globalErrorHandler = require('./controllers/errorController')
 const authRouter = require('./routes/authRouter')
 const paymentRouter = require('./routes/paymentRoutes')
+const userRouter = require('./routes/userRoutes')
 const webhookRouter = require('./routes/webhookRoutes');
 const jobRouter = require('./routes/jobRoutes');
-const waitlistRouter = require('./routes/waitlistRoutes');
  
 const app = express();
 
@@ -35,7 +35,7 @@ app.use(
 );
 
 // Body parser, reading data from body into req.body
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
 
 // Security HTTP headers
 app.use(helmet());
@@ -57,8 +57,8 @@ app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
 
-app.use('/api/v1/waitlist', waitlistRouter);
 app.use('/api/v1/auth', authRouter);
+app.use('/api/v1/users', userRouter);
 app.use('/api/v1/payment', paymentRouter);
 app.use('/api/v1/jobs', jobRouter);
 

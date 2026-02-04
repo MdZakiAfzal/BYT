@@ -217,7 +217,15 @@ exports.chatWithJob = catchAsync(async (req, res, next) => {
   const job = await Job.findOne({ _id: req.params.id, userId: req.user._id });
   if (!job) return next(new AppError('Job not found', 404));
 
-  // 2. Call AI Service
+  // 2. 🛡️ CHECK PLAN PERMISSION
+  const user = req.user;
+  const userPlan = plans[user.plan];
+
+  if (!userPlan.features.chatAssistant) {
+    return next(new AppError('The AI Co-Pilot is a premium feature. Please upgrade to use it.', 403));
+  }
+
+  // 3. Call AI Service
   const rewrittenText = await aiService.chatWithContent(
     { videoTitle: job.videoMetadata.title },
     message,      // e.g., "Make it funnier"

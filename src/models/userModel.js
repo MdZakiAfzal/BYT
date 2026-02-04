@@ -11,21 +11,18 @@ const userSchema = new Schema({
       lowercase: true,
       trim: true,
     },
-    password:{
+    password: {
         type: String,
         required: [true, 'User must have a password'],
         minlength: 8,
         select: false
     },
-    confirmPassword:{
+    confirmPassword: {
         type: String,
         required: [true, 'User must confirm password'],
         select: false,
-        //this only works for "create or save" and not for update
-        validate:{
-            validator: function(val){
-                return val === this.password;
-            },
+        validate: {
+            validator: function(val) { return val === this.password; },
             message: 'Passwords do not match'
         }
     },
@@ -34,27 +31,39 @@ const userSchema = new Schema({
       default: '',
       trim: true,
     },
+    
+    // 🆕 ACCOUNT STATUS & PREFERENCES
+    active: {
+      type: Boolean,
+      default: true,
+      select: false // Hides this field from normal queries
+    },
+    preferences: {
+        marketingEmails: { type: Boolean, default: true },
+        productUpdates: { type: Boolean, default: true }
+    },
+
+    // PLAN & BILLING
     plan: {
       type: String,
-      enum: ['free', 'pro', 'premium', 'agency'],
+      enum: ['free', 'starter', 'pro', 'agency'],
       default: 'free',
     },
-    monthlyQuotaUsed: {
-      type: Number,
-      default: 0
-    },
-    whisperQuotaUsed: {
-      type: Number,
-      default: 0
-    },
+    stripeCustomerId: String, 
+    stripeSubscriptionId: String,
+    stripeCurrentPeriodEnd: Date,
+
+    // 🆕 USAGE TRACKING
+    monthlyQuotaUsed: { type: Number, default: 0 },
+    whisperQuotaUsed: { type: Number, default: 0 },
+    imageQuotaUsed: { type: Number, default: 0 },   // 👈 New for Image Gen
+    
     quotaResetAt: {
       type: Date,
       default: () => new Date(),
     },
-    subscriptionId: {
-      type: String,
-      default: null,
-    },
+    
+    // AUTH TOKENS
     refreshTokens: [{
         token: { type: String, required: true },
         createdAt: { type: Date, default: Date.now }
@@ -62,57 +71,45 @@ const userSchema = new Schema({
     passwordChangedAt: Date,
     passwordResetToken: String,
     passwordResetExpires: Date
-},{ 
+}, { 
     timestamps: true 
 });
 
-
-// 1. Encrypt password before saving
-userSchema.pre('save', async function () {
-    // If password is not modified, simply return (promise resolves automatically)
+// PRE-SAVE: Hash Password
+userSchema.pre('save', async function (next) {
     if (!this.isModified('password')) return;
-
     this.password = await bcrypt.hash(this.password, 12);
-    this.confirmPassword = undefined; // Do not persist this field
+    this.confirmPassword = undefined;
 });
 
-// 4. Method: Check if password changed after token was issued
+// PRE-SAVE: Update passwordChangedAt
+userSchema.pre('save', function (next) {
+    if (!this.isModified('password') || this.isNew) return;
+    this.passwordChangedAt = Date.now() - 1000;
+});
+
+// 🆕 QUERY MIDDLEWARE: Hide deleted users automatically
+userSchema.pre(/^find/, function(next) {
+    // 'this' points to the current query
+    this.find({ active: { $ne: false } });
+});
+
 userSchema.methods.passwordChangedAfter = function (JWTTimestamp) {
     if (this.passwordChangedAt) {
         const changedTimestamp = parseInt(this.passwordChangedAt.getTime() / 1000, 10);
         return JWTTimestamp < changedTimestamp;
     }
-    // False means NOT changed
     return false;
 };
 
-// 3. Method: Check if password is correct
 userSchema.methods.correctPassword = async function (candidatePassword, userPassword) {
     return await bcrypt.compare(candidatePassword, userPassword);
 };
 
-// 2. Update passwordChangedAt property for the password reset functionality
-userSchema.pre('save', async function () {
-    if (!this.isModified('password') || this.isNew) return;
-
-    this.passwordChangedAt = Date.now() - 1000;
-});
-
-// 5. Method: Generate Reset Token
 userSchema.methods.createPasswordResetToken = function() {
-    // 1. Generate a random 32-char hex string
     const resetToken = crypto.randomBytes(32).toString('hex');
-
-    // 2. Encrypt it (sha256) and save to DB
-    this.passwordResetToken = crypto
-        .createHash('sha256')
-        .update(resetToken)
-        .digest('hex');
-
-    // 3. Set expiration (10 minutes)
+    this.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
     this.passwordResetExpires = Date.now() + 10 * 60 * 1000;
-
-    // 4. Return the PLAIN token (to send via email)
     return resetToken;
 };
 

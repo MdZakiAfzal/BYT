@@ -12,10 +12,12 @@ router.use(authController.protect);
 router.route('/')
   .get(jobController.getAllJobs)
   .post(jobController.createJob);
+router.post('/generate-image', jobController.generateImage);
 router.route('/:id')
   .get(jobController.getJob)
   .patch(jobController.updateJobContent)
   .delete(jobController.deleteJob);
+
 router.post('/:id/chat', jobController.chatWithJob);
 router.post('/:id/retry', jobController.retryJob);
 router.patch('/:id/publish', jobController.togglePublicStatus);

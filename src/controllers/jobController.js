@@ -5,6 +5,7 @@ const queueService = require('../services/queueService');
 const aiService = require('../services/aiService');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/AppError');
+const { GoogleGenAI } = require("@google/genai");
 
 // Helper to extract Video ID from URL
 const extractVideoId = (url) => {
@@ -236,5 +237,91 @@ exports.chatWithJob = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     data: { rewrittenText }
+  });
+});
+
+const ai = new GoogleGenAI({ 
+  apiKey: process.env.GEMINI_API_KEY 
+});
+
+exports.generateImage = catchAsync(async (req, res, next) => {
+  const { prompt } = req.body;
+
+  // 1. 🔍 Get User & Plan
+  const user = await User.findById(req.user._id);
+  if (!user) return next(new AppError('User not found', 404));
+
+  const userPlan = plans[user.plan] || plans.free;
+
+  // 2. 🛡️ Permission Gates
+  if (!userPlan.features.allowImageGen) {
+    return next(new AppError('AI Image Generation is a premium feature. Please upgrade.', 403));
+  }
+
+  const imageLimit = userPlan.features.imageQuota;
+  if (user.imageQuotaUsed >= imageLimit) {
+    return next(new AppError(`You have reached your limit of ${imageLimit} images.`, 403));
+  }
+
+  if (!prompt) {
+    return next(new AppError('Please provide an image description', 400));
+  }
+
+  // 3. 🎨 Generate Image
+  let imageUrl = "";
+  let generationSource = "gemini";
+
+  try {
+    // Clean prompt: limit length and remove line breaks for the model
+    const cleanPrompt = prompt.substring(0, 500).replace(/(\r\n|\n|\r)/gm, " ");
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: [{ role: "user", parts: [{ text: cleanPrompt }] }],
+      config: {
+        response_modalities: ["IMAGE"],
+        image_config: {
+          aspect_ratio: "1:1",
+          count: 1
+        }
+      }
+    });
+
+    // Extract Base64 from the 2026 SDK response structure
+    const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+
+    if (imagePart) {
+      const { data, mimeType } = imagePart.inlineData;
+      imageUrl = `data:${mimeType};base64,${data}`;
+    } else {
+      throw new Error("Empty image payload from Gemini");
+    }
+
+  } catch (err) {
+    console.warn("⚠️ Gemini 2.5 Image failed, falling back to Flux:", err.message);
+    
+    // STRATEGY B: Fallback (Pollinations Flux)
+    generationSource = "flux";
+    const safePrompt = encodeURIComponent(
+      prompt.substring(0, 150).replace(/[^\w\s]/gi, '')
+    );
+    imageUrl = `https://image.pollinations.ai/prompt/${safePrompt}?width=1024&height=1024&model=flux&nologo=true`;
+  }
+
+  // 4. 📈 Increment Quota & Send Response
+  // Use { new: true } to get the updated count for the response
+  const updatedUser = await User.findByIdAndUpdate(
+    user._id,
+    { $inc: { imageQuotaUsed: 1 } },
+    { new: true }
+  );
+
+  res.status(200).json({
+    status: 'success',
+    source: generationSource,
+    data: {
+      imageUrl: imageUrl,
+      quotaRemaining: Math.max(0, imageLimit - updatedUser.imageQuotaUsed)
+    }
   });
 });

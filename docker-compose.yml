@@ -9,6 +9,7 @@ services:
     build: .
     volumes:
       - .:/app
+      - /app/node_modules
     ports:
       - "4000:4000"
     dns:
@@ -26,6 +27,7 @@ services:
     build: .
     volumes:
       - .:/app
+      - /app/node_modules
     dns:
       - 8.8.8.8
       - 8.8.4.4
